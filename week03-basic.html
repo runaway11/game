@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>공 잡기 게임</title>
+
+<style>
+    body{
+        text-align:center;
+        font-family: 'Arial', sans-serif; /* 폰트 살짝 수정 */
+        background-color: #f0f2f5; /* 배경색 추가 */
+        margin-top: 50px;
+    }
+
+    h1 {
+        color: #333;
+    }
+
+    div.status-board {
+        background: white;
+        display: inline-block;
+        padding: 15px 30px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+
+    p{
+        font-size: 1.1em;
+        margin: 10px 0;
+    }
+
+    canvas{
+        border:3px solid #333; /* 테두리 강조 */
+        background-color: white;
+        cursor: crosshair; /* 마우스 커서 변경 */
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    button {
+        font-size: 1.2em;
+        padding: 10px 25px;
+        cursor: pointer;
+        background-color: #28a745; /* 초록색 버튼 */
+        color: white;
+        border: none;
+        border-radius: 5px;
+        transition: background-color 0.2s;
+        margin-bottom: 10px;
+    }
+
+    button:hover {
+        background-color: #218838;
+    }
+</style>
+
+</head>
+<body>
+
+<h1>공 잡기 게임</h1>
+
+<div class="status-board">
+    <p>
+        점수 : <span id="score" style="font-weight:bold; color:blue;">0</span> |
+        남은 시간 : <span id="time" style="font-weight:bold; color:red;">30</span>초 |
+        속도 : <span id="speed">1</span>단계
+    </p>
+    <p id="message" style="color: green; height: 20px; font-weight: bold;"></p> <!-- 피드백 메시지 공간 추가 -->
+</div>
+<br>
+<button onclick="startGame()">게임 시작</button><br>
+<canvas id="gameCanvas" width="600" height="400"></canvas>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const scoreText = document.getElementById("score");
+    const speedText = document.getElementById("speed");
+    const timeText = document.getElementById("time");
+    const messageText = document.getElementById("message"); // 메시지 요소 가져오기
+
+    let score = 0;
+    let speedLevel = 1;
+    let timeLeft = 30;
+    let gameRunning = false;
+    let timerId;
+    let animId;
+
+    // [수정사항] 공 객체에 'type'과 'color' 속성을 추가하여 일반 공과 보너스 공을 구분합니다.
+    const ball = {
+        x: 300, y: 200, radius: 35, dx: 3, dy: 2,
+        color: "tomato", // 기본 색상
+        type: "normal"   // 기본 타입 ("normal" 또는 "bonus")
+    };
+
+    // 게임 시작 시 초기화 함수
+    function startGame() {
+        if(animId) cancelAnimationFrame(animId);
+
+        score = 0;
+        timeLeft = 30;
+        speedLevel = 1;
+        
+        // UI 업데이트
+        scoreText.textContent = score;
+        timeText.textContent = timeLeft;
+        speedText.textContent = speedLevel;
+        messageText.textContent = ""; // 메시지 초기화
+
+        // 공 초기 위치 및 속도 설정
+        resetBallProperties(); // 공 속성 초기화 함수 사용
+        ball.x = 300;
+        ball.y = 200;
+
+        gameRunning = true;
+
+        clearInterval(timerId);
+        timerId = setInterval(() => {
+            timeLeft--;
+            timeText.textContent = timeLeft;
+            if (timeLeft <= 0) endGame();
+        }, 1000);
+        
+        drawGame();
+    }
+
+    // 게임 종료 함수
+    function endGame(){
+        gameRunning = false;
+        clearInterval(timerId);
+        if(animId) cancelAnimationFrame(animId);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = "40px Arial";
+        ctx.fillStyle = "black";
+        ctx.textAlign = "center";
+        ctx.fillText("게임 종료!", canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillStyle = "blue";
+        ctx.fillText("최종 점수 : " + score, canvas.width / 2, canvas.height / 2 + 30);
+    }
+
+    // [수정사항] 공의 속성(위치 제외한 색상, 타입, 속도)을 초기 상태로 되돌리는 함수입니다.
+    function resetBallProperties() {
+        ball.color = "tomato"; // 일반 공 색상
+        ball.type = "normal";  // 일반 공 타입
+        ball.radius = 35;      // 일반 공 크기
+        ball.dx = 3;
+        ball.dy = 2;
+    }
+
+    // 공을 그리는 함수 (ball 객체의 색상을 사용하도록 수정)
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = ball.color; // 객체에 설정된 색상 적용
+        ctx.fill();
+        ctx.closePath(); // 명시적으로 닫기
+    }
+
+    // 공의 위치와 이동을 업데이트하는 함수
+    function updateBall() {
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
+            ball.dx = -ball.dx;
+        }
+        if (ball.y + ball.radius > canvas.height || ball.y - ball.radius < 0) {
+            ball.dy = -ball.dy;
+        }
+    }
+
+    // 게임 애니메이션 루프
+    function drawGame() {
+        if (!gameRunning) return; // 게임 중이 아니면 중단
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawBall();
+        updateBall();
+        animId = requestAnimationFrame(drawGame);
+    }
+
+    // [핵심 수정사항] 클릭 이벤트 처리 함수 - 확률적 보너스 공 로직 추가
+    canvas.addEventListener("click", function (event) {
+        if (!gameRunning) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        const dx = mouseX - ball.x;
+        const dy = mouseY - ball.y;
+        const distance = Math.sqrt(dx*dx + dy*dy);
+
+        // 공을 클릭했을 때
+        if (distance <= ball.radius) {
+            // [추가 구현] 공의 타입에 따라 점수와 효과를 다르게 적용합니다.
+            if (ball.type === "bonus") {
+                // 1. 보너스 공인 경우 (파란색)
+                score += 5;             // 일반 공(1점)의 5배 획득
+                timeLeft += 3;          // 3초 시간 추가
+                showMessage("+5점! +3초!", "blue"); // 피드백 메시지 표시
+            } else {
+                // 2. 일반 공인 경우 (빨간색)
+                score += 1;             // 기본 점수 획득
+                showMessage("+1점", "#333"); // 일반 메시지 표시
+            }
+
+            // 공통: 점수 업데이트, 속도 증가, 공 재배치
+            scoreText.textContent = score;
+            timeText.textContent = timeLeft; // 시간 UI 업데이트
+            
+            speedLevel++;
+            speedText.textContent = speedLevel;
+            
+            // 속도 증가 로직 (방향 유지)
+            ball.dx = ball.dx > 0 ? ball.dx + 0.4 : ball.dx - 0.4;
+            ball.dy = ball.dy > 0 ? ball.dy + 0.4 : ball.dy - 0.4;
+
+            // [핵심 수정사항] 다음 공을 결정하기 위해 속성을 무작위로 다시 설정합니다.
+            setNextBallType(); 
+            moveBallRandom();
+        }
+    });
+
+    // [핵심 구현] 확률에 따라 다음 공의 속성(일반 vs 보너스)을 결정하는 함수
+    function setNextBallType() {
+        // Math.random()은 0.0 이상 1.0 미만의 난수를 반환합니다.
+        const randomChance = Math.random(); 
+
+        // 15% 확률로 보너스 공 등장, 85% 확률로 일반 공 등장
+        if (randomChance < 0.15) { 
+            // 보너스 공 설정
+            ball.type = "bonus";
+            ball.color = "#007bff"; // 파란색 (보너스)
+            ball.radius = 25;       // 조금 더 작게 만들어서 난이도 조절 가능
+        } else {
+            // 일반 공 설정 (기본값으로 리셋)
+            resetBallProperties(); 
+        }
+    }
+
+    // 공을 무작위 위치로 이동시키는 함수
+    function moveBallRandom() {
+        ball.x = Math.random() * (canvas.width - ball.radius*2) + ball.radius;
+        ball.y = Math.random() * (canvas.height - ball.radius*2) + ball.radius;
+    }
+
+    // 화면 상단에 일시적인 점수 획득 메시지를 보여주는 함수
+    let messageTimer;
+    function showMessage(text, color) {
+        messageText.textContent = text;
+        messageText.style.color = color;
+        
+        // 이전에 실행 중이던 메시지 타이머가 있다면 취소 (연속 클릭 시 깜빡임 방지)
+        clearTimeout(messageTimer);
+        
+        // 0.8초 후에 메시지 숨기기
+        messageTimer = setTimeout(() => {
+            messageText.textContent = "";
+        }, 800);
+    }
+
+</script>
+
+</body>
+</html>
