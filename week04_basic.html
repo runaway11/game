@@ -22,7 +22,7 @@
 <body>
 
     <h1>Pong 게임</h1>
-    <p>왼쪽 플레이어: W / S | 오른쪽 플레이어: AI 대전 | 먼저 10점 달성 시 승리!</p>
+    <p>왼쪽 플레이어: W / S | 오른쪽 플레이어: AI 대전 | 먼저 5점 달성 시 승리!</p>
     <p>왼쪽 점수: <span id="leftScore">0</span> | 오른쪽 점수: <span id="rightScore">0</span></p>
 
     <canvas id="gameCanvas" width="700" height="400"></canvas>
@@ -112,12 +112,12 @@
         );
     }
 
-    // [추가 기능 4] 10점 달성 시 승리 여부를 체크하는 함수
+    // [추가 기능 4] 5점 달성 시 승리 여부를 체크하는 함수
     function checkWinCondition() {
-        if (leftScore >= 10) {
+        if (leftScore >= 5) {
             isGameOver = true;
             winnerText = "왼쪽 플레이어 승리! 🎉";
-        } else if (rightScore >= 10) {
+        } else if (rightScore >= 5) {
             isGameOver = true;
             winnerText = "오른쪽(AI) 플레이어 승리! 🤖";
         }
