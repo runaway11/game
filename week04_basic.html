@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Pong 게임</title>
+
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial;
+            background: #f5f5f5;
+        }
+
+        canvas {
+            border: 2px solid black;
+            background: #111;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Pong 게임</h1>
+    <p>왼쪽 플레이어: W / S | 오른쪽 플레이어: AI 대전 | 먼저 10점 달성 시 승리!</p>
+    <p>왼쪽 점수: <span id="leftScore">0</span> | 오른쪽 점수: <span id="rightScore">0</span></p>
+
+    <canvas id="gameCanvas" width="700" height="400"></canvas>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const leftScoreText = document.getElementById("leftScore");
+    const rightScoreText = document.getElementById("rightScore");
+
+    let leftScore = 0; 
+    let rightScore = 0; 
+    
+    // [추가 기능 1] 마지막으로 공을 건드린 플레이어 기록용 변수 ('left' 또는 'right')
+    // -> 가시에 부딪혔을 때 공을 마지막으로 친 사람의 점수만 깎기 위해 사용됩니다.
+    let lastHitPlayer = null; 
+
+    // [추가 기능 2] 게임 종료 여부 및 승리 문구 저장 변수
+    let isGameOver = false; 
+    let winnerText = "";    
+
+    // 중앙선 그리기 함수
+    function drawCenterLine() { 
+        ctx.setLineDash([10, 10]); 
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0); 
+        ctx.lineTo(canvas.width / 2, canvas.height); 
+        ctx.strokeStyle = "white";
+        ctx.stroke(); 
+        ctx.setLineDash([]); 
+    }
+
+    // [추가 기능 3] 가시(Obstacle) 오브젝트 정의 및 랜덤 배치 함수
+    const obstacle = {
+        x: 0,
+        y: 0,
+        width: 30,
+        height: 30,
+        active: true
+    };
+
+    function resetObstacle() {
+        if (isGameOver) return; // 게임이 끝났으면 가시 위치를 더 이상 바꾸지 않음
+        // 캔버스 안에서 무작위 위치에 가시 생성
+        obstacle.x = Math.random() * (canvas.width - 250) + 125;
+        obstacle.y = Math.random() * (canvas.height - 100) + 50;
+        obstacle.active = true;
+    }
+
+    // 가시를 화면에 그려주는 함수 (빨간색 박스와 경고 이모지)
+    function drawObstacle() {
+        if (!obstacle.active) return;
+
+        ctx.fillStyle = "#ff4444"; 
+        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        
+        ctx.fillStyle = "white";
+        ctx.font = "16px Arial";
+        ctx.fillText("⚠️", obstacle.x + 4, obstacle.y + 22);
+    }
+
+    const ball = {
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        radius: 10,
+        dx: 5,
+        dy: 3
+    };
+
+    function drawBall() { 
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+    }
+
+    // 공과 가시의 충돌 감지 함수
+    function isBallHitObstacle() {
+        if (!obstacle.active) return false;
+
+        return (
+            ball.x - ball.radius < obstacle.x + obstacle.width &&
+            ball.x + ball.radius > obstacle.x &&
+            ball.y - ball.radius < obstacle.y + obstacle.height &&
+            ball.y + ball.radius > obstacle.y
+        );
+    }
+
+    // [추가 기능 4] 10점 달성 시 승리 여부를 체크하는 함수
+    function checkWinCondition() {
+        if (leftScore >= 10) {
+            isGameOver = true;
+            winnerText = "왼쪽 플레이어 승리! 🎉";
+        } else if (rightScore >= 10) {
+            isGameOver = true;
+            winnerText = "오른쪽(AI) 플레이어 승리! 🤖";
+        }
+    }
+
+    function moveBall() { 
+        if (isGameOver) return;
+
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        // 벽 반사 (위/아래)
+        if(ball.y - ball.radius < 0 || ball.y + ball.radius > canvas.height) {
+            ball.dy = ball.dy * -1; 
+        }
+
+        // 득점 판정 및 리셋
+        if(ball.x - ball.radius < 0) { 
+            rightScore++;
+            rightScoreText.textContent = rightScore;
+            checkWinCondition(); // 점수 변동 시 승리 조건 검사
+            if (!isGameOver) resetBall();
+        }
+        if(ball.x + ball.radius > canvas.width) { 
+            leftScore++;
+            leftScoreText.textContent = leftScore;
+            checkWinCondition(); // 점수 변동 시 승리 조건 검사
+            if (!isGameOver) resetBall();
+        }
+
+        // [추가 기능 5] 패들 충돌 시 넓은 반사 각도 적용 및 마지막 타자 기록
+        if(isBallHitPaddle(leftPaddle)) { 
+            ball.dx = Math.abs(ball.dx); 
+            // 패들의 중심과 공의 거리 차이를 이용해 가파른 dy(수직 속도) 부여
+            let collidePoint = ball.y - (leftPaddle.y + leftPaddle.height / 2);
+            ball.dy = collidePoint * 0.25; 
+            lastHitPlayer = 'left'; // 왼쪽 플레이어가 쳤음 기록
+        }
+        if(isBallHitPaddle(rightPaddle)) {
+            ball.dx = -Math.abs(ball.dx);
+            let collidePoint = ball.y - (rightPaddle.y + rightPaddle.height / 2);
+            ball.dy = collidePoint * 0.25;
+            lastHitPlayer = 'right'; // 오른쪽 플레이어가 쳤음 기록
+        }
+
+        // [추가 기능 6] 가시 충돌 처리
+        if (isBallHitObstacle()) {
+            ball.dx *= -1; // 가시에 닿으면 방향 반전 튕김
+            ball.dy *= -1;
+
+            // 마지막으로 공을 친 플레이어의 점수만 감점 (0점 제한 없이 음수 허용)
+            if (lastHitPlayer === 'left') {
+                leftScore--;
+                leftScoreText.textContent = leftScore;
+            } else if (lastHitPlayer === 'right') {
+                rightScore--;
+                rightScoreText.textContent = rightScore;
+            } else {
+                // 패들을 거치지 않고 바로 가시에 닿은 경우 예외적으로 양쪽 모두 감점
+                leftScore--;
+                rightScore--;
+                leftScoreText.textContent = leftScore;
+                rightScoreText.textContent = rightScore;
+            }
+
+            checkWinCondition(); // 가시 때문에 점수가 깎여서 10점이 되었을 수도 있으므로 체크
+
+            // 가시에 맞았을 때 공 속도 약간 감소 (최소 속도 유지)
+            if (Math.abs(ball.dx) > 3) ball.dx *= 0.8;
+            if (Math.abs(ball.dy) > 2) ball.dy *= 0.8;
+
+            // 충돌 직후 가시 위치를 새로운 랜덤 위치로 즉시 재배치
+            resetObstacle();
+        }
+    }
+
+    function isBallHitPaddle(paddle) {
+        return (
+            ball.x - ball.radius < paddle.x + paddle.width && 
+            ball.x + ball.radius > paddle.x && 
+            ball.y - ball.radius < paddle.y + paddle.height && 
+            ball.y + ball.radius > paddle.y 
+        );
+    }
+
+    const keys = {}; 
+
+    document.addEventListener("keydown", function (event){ 
+        keys[event.key] = true;
+    });
+    document.addEventListener("keyup", function (event) { 
+        keys[event.key] = false;
+    });
+
+    function movePaddles() {
+        if (isGameOver) return;
+        if (keys["w"] || keys["W"]){
+            leftPaddle.y -= leftPaddle.speed;
+        }
+        if (keys["s"] || keys["S"]){
+            leftPaddle.y += leftPaddle.speed;
+        }
+        keepPaddleInside(leftPaddle);
+    }
+
+    function moveAI() {
+        if (isGameOver) return;
+        const aiCenter = rightPaddle.y + rightPaddle.height/2;
+        const speed = 3;
+
+        if (ball.y < aiCenter) {
+            rightPaddle.y -= speed;
+        }
+        else {
+            rightPaddle.y += speed;
+        }
+        keepPaddleInside(rightPaddle);
+    }
+
+    function keepPaddleInside(paddle){ 
+        if(paddle.y < 0){
+            paddle.y = 0;
+        }
+        if(paddle.y + paddle.height > canvas.height) {
+            paddle.y = canvas.height - paddle.height;
+        }
+    }
+
+    // [추가 기능 7] 점수가 날 때 속도와 위치를 깔끔하게 초기화 (속도 누적 방지)
+    function resetBall() {
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        ball.dx = 5; // 기본 수평 속도로 초기화
+        ball.dy = (Math.random() * 6) - 3; // 리셋될 때 랜덤한 수직 속도 부여
+        if (ball.dy === 0) ball.dy = 2;
+        
+        lastHitPlayer = null; // 서브 시점에는 마지막 타자 기록 초기화
+        resetObstacle();      // 점수가 날 때마다 가시 위치도 새로 변경
+    }
+
+    const paddleWidth = 12;
+    const paddleHeight = 80;
+
+    const leftPaddle = {
+        x: 30,
+        y: canvas.height/2 - paddleHeight/2,
+        width: paddleWidth,
+        height: paddleHeight,
+        speed: 6
+    };
+
+    const rightPaddle = {
+        x: canvas.width - 30 - paddleWidth,
+        y: canvas.height/2 - paddleHeight/2,
+        width: paddleWidth,
+        height: paddleHeight,
+        speed: 6
+    }
+
+    function drawRect(rect) { 
+        ctx.fillStyle = "white";
+        ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    }
+    
+    function drawGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        drawCenterLine(); 
+        drawObstacle(); 
+        moveBall();
+        drawBall();
+        movePaddles();
+        moveAI();
+        drawRect(leftPaddle);
+        drawRect(rightPaddle);
+
+        // 게임이 종료되었을 때 화면에 승리 메시지 렌더링 후 루프 중단
+        if (isGameOver) {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "yellow";
+            ctx.font = "bold 30px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(winnerText, canvas.width / 2, canvas.height / 2 - 20);
+
+            ctx.fillStyle = "white";
+            ctx.font = "16px Arial";
+            ctx.fillText("게임을 다시 시작하려면 새로고침(F5)을 하세요.", canvas.width / 2, canvas.height / 2 + 30);
+            return; 
+        }
+
+        requestAnimationFrame(drawGame); 
+    }
+
+    // 최초 게임 실행 및 가시 배치
+    resetObstacle();
+    drawGame();
+
+    // [추가 기능 8] 4초마다 가시 위치가 자동으로 무작위 변경되도록 타이머 설정 (4000ms = 4초)
+    setInterval(function() {
+        if (!isGameOver) resetObstacle();
+    }, 4000);
+</script>
+</body>
+
+</html>
