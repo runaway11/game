@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>벽돌깨기 게임</title>
+
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial;
+        }
+
+        canvas {
+            border: 2px solid black;
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>벽돌깨기 게임</h1>
+
+    <p>
+        스테이지: <span id="stage">1</span> | 
+        점수: <span id="score">0</span> |
+        목숨: <span id="lives">3</span>
+    </p>
+
+    <p>조작: ← / → 방향키</p>
+
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+<script>
+    const canvas = document.getElementById("gameCanvas"); // 캔버스 정보 가져오기
+    const ctx = canvas.getContext("2d");
+
+    const scoreText = document.getElementById("score"); // 점수와 목숨 정보 가져오기
+    const livesText = document.getElementById("lives");
+    const stageText = document.getElementById("stage"); // [추가] 스테이지 텍스트 가져오기
+
+    let score = 0; // 점수와 목숨 변수 초기화
+    let lives = 3;
+    let currentStage = 1; // [추가] 현재 스테이지 변수
+
+    const paddle = {
+        x: canvas.width /2 - 50, // 패들의 x좌표를 캔버스 크기에 맞춰 계산해 지정
+        y: canvas.height -30,
+        width : 100,
+        height : 12,
+        speed: 7
+    }
+
+    function drawPaddle() { // 패들 그리는 함수
+        ctx.fillStyle = "#333";
+        ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+    }
+
+    const keys = {}; // 키 클릭 여부와 이벤트를 저장하는 함수
+
+    document.addEventListener("keydown", function (event) {
+        keys[event.key] = true;
+    });
+
+    document.addEventListener("keyup", function (event) {
+        keys[event.key] = false;
+    });
+
+    function movePaddle() {
+        if (keys["ArrowLeft"]) { // 좌측 화살표키를 누른다면
+            paddle.x -= paddle.speed; // 패들의 x좌표가 스피드 값에 의해 변화도록 (값이 음수가 되어서 왼쪽으로 움직이게끔)
+        }
+        if (keys["ArrowRight"]) { // 우측 화살표키를 누른다면
+            paddle.x += paddle.speed; // 패들의 x좌표가 스피드 값에 의해 변화도록 (값이 양수가 되어서 오른쪽으로 움직이게끔)
+        }
+        if(paddle.x < 0) { // 패들이 캔버스 바깥으로 나가지 않도록 설정하는 함수
+            paddle.x = 0;
+        }
+        if(paddle.x + paddle.width > canvas.width) {
+            paddle.x = canvas.width - paddle.width;
+        }
+    }
+
+    const ball = { // 공 객체 설정 함수
+        x: canvas.width /2, // 공이 캔버스 중앙에 오도록
+        y: canvas.height -50, // 공이 패들 바로 위쪽에 오도록
+        radius: 8,
+        dx: 4,
+        dy: -4
+    }
+
+    function drawBall() { // 공 그리는 함수
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "tomato";
+        ctx.fill();
+    }
+
+    function moveBall() { // 공 움직이는 함수
+        if(isGameOver) return; // 게임오버=트루가 되면 무브 볼 함수 즉시 종료 
+        
+        ball.x += ball.dx;
+        ball.y += ball.dy;
+
+        if (ball.x - ball.radius < 0 || ball.x + ball.radius > canvas.width) { // 공 왼쪽(x-radius)이 캔버스 왼쪽(0) 경계에 닿거나 or 공 오른쪽(x+radius)이 캔버스 오른쪽(width) 경계에 닿으면 
+            ball.dx *= -1; // 반대 방향으로 튕겨지도록
+        }
+
+        if (ball.y - ball.radius < 0) { // 공 위쪽(x-radius)이 캔버스 위쪽(0) 경계에 닿으면 (공 아래쪽은 y+radius, 캔버스 아래쪽은 height)
+            ball.dy *= -1;
+        }
+
+        if ( // 공이 패들과 충돌하는 것을 감지
+            ball.x + ball.radius > paddle.x && // 공 오른쪽(x+radius)이 패들 왼쪽(x)과 충돌
+            ball.x - ball.radius < paddle.x + paddle.width && // 공 왼쪽(x-radius)이 패들 오른쪽(x+width)과 충돌
+            ball.y + ball.radius > paddle.y && // 공 아래쪽(y+radius)이 패들 위쪽(y)과 충돌
+            ball.y - ball.radius < paddle.y + paddle.height // 공 위쪽(y-radius)이 패들 아래쪽(y+height)과 충돌
+        ){
+            ball.dy = -Math.abs(ball.dy); // 충돌시 이동 방향을 바꿔 패들 아래에 공이 갇히지 않게 함
+        }
+
+        if (ball.y - ball.radius > canvas.height) { // 공 아래쪽이 캔버스 아래쪽에 닿으면 (=죽으면)
+            lives--; // 목숨 1 감소
+            livesText.textContent = lives; // 목숨 감소 보여주기
+
+            if(lives<=0){ // 목숨이 0이 되면
+                isGameOver = true; // 게임 오버 활성화
+                gameOver();
+            } else {
+                resetBallAndPaddle(); // 공과 패들 초기화
+            }
+        }
+    }
+
+    let isGameOver = false; // 게임 오버가 아닌 상태로 초기화 (함수 바깥에 있어야 함)
+
+    function resetBallAndPaddle() { // 공과 패들 초기화 함수
+        paddle.x = canvas.width / 2 - paddle.width / 2;
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height -50;
+        // [수정] 스테이지가 올라갈수록 공 속도 증가
+        let speedMultiplier = 1 + (currentStage - 1) * 0.2;
+        ball.dx = 4 * (ball.dx > 0 ? speedMultiplier : -speedMultiplier);
+        ball.dy = -4 * speedMultiplier;
+    }
+
+    function gameOver(){ // 게임 오버시 함수
+        alert("게임 오버! 최종 점수: " + score);
+        document.location.reload();
+    }
+
+    const brick = { // 벽돌 객체 정보 선언 함수
+        row: 4, // 벽돌 가로 행 칸 수
+        column: 8, // 벽돌 세로 행 칸 수
+        width: 60, // 벽돌 하나의 너비 크기
+        height: 20, // 벽돌 하나의 높이 크기
+        padding: 10, // 벽돌 간 간격
+        offsetTop: 40, // 캔버스 위쪽 벽과 첫번째 벽돌 사이의 여백
+        offsetLeft: 25 // 캔버스 왼쪽 벽과 첫번째 벽돌 사이의 여백
+    };
+
+    const brickColors = ["#e74c3c", "#f1c40f", "#2ecc71", "#9b59b6"]; // 빨강, 노랑, 초록, 보라
+    const brickScores = [4, 3, 2, 1]; // 각 행의 점수
+
+    let bricks = []; // [수정] let으로 변경 (스테이지 리셋 시 재할당을 위해)
+
+    function initBricks() { // [추가] 벽돌 초기화 함수
+        bricks = [];
+        for (let r = 0; r < brick.row; r++) {
+            bricks[r]= [];
+            for(let c = 0; c < brick.column; c++) {
+                bricks[r][c] = {
+                    x: 0,
+                    y: 0,
+                    visible: true,
+                    point: brickScores[r],
+                    isBomb: (r === 0) // [추가] 첫 번째 행(빨간색)은 폭발 벽돌로 지정
+                };
+            }
+        }
+    }
+    initBricks();
+
+    // [추가] 떨어지는 아이템 배열 및 관련 변수
+    let items = [];
+
+    function drawBricks() { // 벽돌 배열을 그리는 함수 
+        for (let r = 0; r < brick.row; r++) {
+            for (let c = 0; c < brick.column; c++) {
+                const b = bricks[r][c];
+
+                if(b.visible){
+                    const brickX = c * (brick.width + brick.padding) + brick.offsetLeft;
+                    const brickY = r * (brick.height + brick.padding) + brick.offsetTop;
+
+                    b.x = brickX;
+                    b.y = brickY;
+
+                    ctx.fillStyle = brickColors[r];
+                    ctx.fillRect(brickX, brickY, brick.width, brick.height);
+
+                    // [추가] 폭발 벽돌인 경우 테두리를 다르게 그려 표시
+                    if(b.isBomb) {
+                        ctx.strokeStyle = "#fff";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(brickX + 2, brickY + 2, brick.width - 4, brick.height - 4);
+                    }
+                }
+            }
+        }
+    }
+
+    // [추가] 폭발 연쇄작용 함수 (4번 기능)
+    function triggerBomb(r, c) {
+        for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+                let nr = r + dr;
+                let nc = c + dc;
+                if (nr >= 0 && nr < brick.row && nc >= 0 && nc < brick.column) {
+                    if (bricks[nr][nc].visible) {
+                        bricks[nr][nc].visible = false;
+                        score += bricks[nr][nc].point;
+                    }
+                }
+            }
+        }
+    }
+
+    function checkBrickCollision() { // 벽돌과 공의 충돌 여부 확인 함수
+        for (let r = 0; r < brick.row; r++) {
+            for (let c = 0; c < brick.column; c++) {
+                const b = bricks[r][c];
+
+                if(b.visible) {
+                    if (
+                        ball.x + ball.radius > b.x && 
+                        ball.x - ball.radius < b.x + brick.width && 
+                        ball.y + ball.radius > b.y && 
+                        ball.y - ball.radius < b.y + brick.height 
+                    ) {
+                        ball.dy *= -1; 
+                        b.visible = false; 
+                        score += b.point;
+                        scoreText.textContent = score;
+
+                        // [추가] 폭발 벽돌일 경우 주변 벽돌도 함께 파괴
+                        if (b.isBomb) {
+                            triggerBomb(r, c);
+                        }
+
+                        // [추가] 30% 확률로 아이템 생성 (1번 기능)
+                        if (Math.random() < 0.3) {
+                            items.push({
+                                x: b.x + brick.width / 2,
+                                y: b.y,
+                                radius: 8,
+                                type: Math.random() < 0.5 ? 'life' : 'paddle', // 목숨 증가 혹은 패들 확장
+                                dy: 2
+                            });
+                        }
+
+                        scoreText.textContent = score;
+                        checkGameClear();
+                    }
+                }
+            }
+        }
+    }
+
+    // [추가] 아이템 그리기 및 이동/충돌 처리 함수 (1번 기능)
+    function handleItems() {
+        for (let i = items.length - 1; i >= 0; i--) {
+            let item = items[i];
+            item.y += item.dy;
+
+            // 아이템 모양 그리기
+            ctx.beginPath();
+            ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+            ctx.fillStyle = item.type === 'life' ? '#27ae60' : '#8e44ad'; // 초록색(목숨), 보라색(패들)
+            ctx.fill();
+            ctx.closePath();
+
+            // 패들과 아이템 충돌 확인
+            if (
+                item.x > paddle.x &&
+                item.x < paddle.x + paddle.width &&
+                item.y + item.radius > paddle.y &&
+                item.y - item.radius < paddle.y + paddle.height
+            ) {
+                if (item.type === 'life') {
+                    lives++;
+                    livesText.textContent = lives;
+                } else {
+                    paddle.width += 30; // 패들 길이 증가
+                    setTimeout(() => { paddle.width -= 30; }, 5000); // 5초 뒤 원래대로
+                }
+                items.splice(i, 1); // 아이템 제거
+            } 
+            // 화면 아래로 떨어지면 제거
+            else if (item.y > canvas.height) {
+                items.splice(i, 1);
+            }
+        }
+    }
+
+    function checkGameClear() {
+        let cleared = true;
+        for (let r = 0; r < brick.row; r++) {
+            for (let c = 0; c < brick.column; c++) {
+                if (bricks[r][c].visible) {
+                    cleared = false;
+                    break;
+                }
+            }
+        }
+        if (cleared) {
+            nextStage(); // [수정] 클리어 시 바로 리로드하지 않고 다음 스테이지로 이동 (2번 기능)
+        }
+    }
+
+    // [추가] 다음 스테이지로 넘어가는 함수 (2번 기능)
+    function nextStage() {
+        currentStage++;
+        stageText.textContent = currentStage;
+        alert(`스테이지 ${currentStage - 1} 클리어! 스테이지 ${currentStage}로 이동합니다.`);
+        initBricks();
+        resetBallAndPaddle();
+    }
+
+    function drawGame() { // 게임 실행 함수
+        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+        drawPaddle(); 
+        movePaddle(); 
+
+        drawBall(); 
+        moveBall(); 
+
+        drawBricks(); 
+        checkBrickCollision(); 
+
+        handleItems(); // [추가] 아이템 움직임 및 충돌 실행
+
+        requestAnimationFrame(drawGame); 
+    }
+
+    drawGame();
+    // Ai의 도움을 받아서, 가로행마다 색깔과 점수가 다름 + 빨간 벽돌 명중시 근처 벽돌 추가 파괴 + 벽돌 파괴시 일정 확률로 특수 아이템 생성 + 모든 벽돌 파괴시 다음 스테이지로 이동 기능을 추가했다.
+</script>
+
+</body>
+
+</html>
