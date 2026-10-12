@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Snake 게임</title>
+
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial;
+        }
+
+        canvas {
+            border: 2px solid black;
+            background: #f9f9f9;
+        }
+
+        #collectionBox {
+            margin: 10px auto;
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+        }
+        .color-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #ccc;
+            background-color: #e0e0e0;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+        .color-dot.active {
+            transform: scale(1.2);
+            border-color: #333;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Snake 게임</h1>
+    <p>점수: <span id="score">0</span></p>
+    
+    <div id="collectionBox">
+        <span class="color-dot" id="dot-red" title="빨간색 (1점)"></span>
+        <span class="color-dot" id="dot-orange" title="주황색 (2점)"></span>
+        <span class="color-dot" id="dot-yellow" title="노란색 (3점)"></span>
+        <span class="color-dot" id="dot-green" title="초록색 (4점)"></span>
+        <span class="color-dot" id="dot-blue" title="파란색 (5점)"></span>
+        <span class="color-dot" id="dot-navy" title="남색 (6점)"></span>
+        <span class="color-dot" id="dot-purple" title="보라색 (7점)"></span>
+    </div>
+    <p>무지개 컬렉션 현황: <span id="collectionStatus">0 / 7</span></p>
+    <p>조작: 방향키 ↑ ↓ ← →</p>
+
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById("gameCanvas"); // 늘 하는 캔버스 호출
+        const ctx = canvas.getContext("2d"); // 캔버스에서 2d 컨텍스트 호출
+
+        const scoreText = document.getElementById("score"); // 늘 하는 점수 호출
+        const collectionStatusText = document.getElementById("collectionStatus"); // 컬렉션 현황 텍스트 DOM 호출
+        let score = 0;
+
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;  // 캔버스의 width는 400, 격자 크기는 20이므로 20개의 타일이 배치됨
+
+        let snake = [{x:10, y:10}]; // 뱀의 머리 시작 위치 배열
+
+        let obstacles = [];
+        const obstacleCount = 2; // [수정된 부분] 가시 장애물의 개수를 5개에서 2개로 줄임
+
+        const rainbowFoods = [
+            { color: "red", points: 1 },
+            { color: "orange", points: 2 },
+            { color: "yellow", points: 3 },
+            { color: "green", points: 4 },
+            { color: "blue", points: 5 },
+            { color: "navy", points: 6 },
+            { color: "purple", points: 7 }
+        ];
+
+        let foodList = [];
+        const maxFoodCount = 3; 
+
+        let collectedColors = new Set(); // 모은 색상들을 중복 없이 저장하는 Set 객체
+        let isRainbowMode = false;       // 현재 무지개 버프 상태 여부
+        let rainbowTimer = 0;            // 무지개 버프 지속 시간 타이머
+
+        let dx = 1; // 뱀의 이동 함수 => 1: 오른쪽, -1: 왼쪽, 0: 이동 없음
+        let dy = 0; // 뱀의 이동 함수 => 1: 아래쪽, -1: 위쪽, 0: 이동 없음
+
+        let nextDx = 1; // 뱀의 머리가 역방향으로 이동해서 자멸하는 버그를 막기 위함
+        let nextDy = 0; // 뱀의 머리가 역방향으로 이동해서 자멸하는 버그를 막기 위함
+
+        let gameOver = false;
+
+        function updateCollectionUI() {
+            const allColors = ["red", "orange", "yellow", "green", "blue", "navy", "purple"];
+            
+            allColors.forEach(color => {
+                const dot = document.getElementById("dot-" + color);
+                if (collectedColors.has(color)) {
+                    dot.style.backgroundColor = color; // 모은 색상은 해당 실제 색상으로 채움
+                    dot.classList.add("active");
+                } else {
+                    dot.style.backgroundColor = "#e0e0e0"; // 못 모은 색상은 회색 처리
+                    dot.classList.remove("active");
+                }
+            });
+        }
+
+        function drawTile(x, y, color) { // 타일 그리기 함수
+            ctx.fillStyle = color;
+
+            ctx.fillRect(x*gridSize, y*gridSize, gridSize-2, gridSize-2); // 뱀의 시작인 중앙의 위치를 픽셀 단위로 전달하며, 폭과 너비는 픽셀을 꽉 채우지 않고 조금 작게 선언(-2)
+        }
+        function drawSnake() { // 뱀 그리기 함수
+            for(let i = 0; i< snake.length; i++) { // 뱀은 줄지어서 이동하므로 배열과 for문 사용
+                if(i==0){
+                    drawTile(snake[i].x, snake[i].y, isRainbowMode ? "gold" : "green");
+                }
+                else{
+                    let bodyColor = "limegreen";
+                    if(isRainbowMode) {
+                        const colors = ["red", "orange", "yellow", "green", "blue", "navy", "purple"];
+                        bodyColor = colors[i % colors.length];
+                    }
+                    drawTile(snake[i].x, snake[i].y, bodyColor);
+                }
+            }
+        }
+        function drawFood() { // 먹이 그리기 함수
+            for(let i = 0; i < foodList.length; i++) {
+                drawTile(foodList[i].x, foodList[i].y, foodList[i].color); 
+            }
+        }
+
+        function drawObstacles() {
+            for(let i = 0; i < obstacles.length; i++) {
+                drawTile(obstacles[i].x, obstacles[i].y, "#444444");
+            }
+        }
+
+        document.addEventListener("keydown", changeDirection); // 키를 누르면 뱀의 방향 변경
+
+        function changeDirection(event){
+            if(event.key === "ArrowUp" && dy !== 1){ // 위로 가다가 역방향으로 가서 자멸하는 버그를 막기 위한 조건 추가(dy !==1)
+                nextDx = 0;
+                nextDy = -1;
+            }
+            if(event.key === "ArrowDown" && dy !== -1){ // 아래로 가다가 역방향으로 가서 자멸하는 버그를 막기 위한 조건 추가(dy !==-1)
+                nextDx = 0;
+                nextDy = 1;
+            }
+            if(event.key === "ArrowLeft" && dx !== 1){ // 왼쪽으로 가다가 역방향으로 가서 자멸하는 버그를 막기 위함(dy !==1)
+                nextDx = -1;
+                nextDy = 0;
+            }
+            if(event.key === "ArrowRight" && dx !== -1){ // 오른쪽으로 가다가 역방향으로 가서 자멸하는 버그를 막기 위함(dy !==1)
+                nextDx = 1;
+                nextDy = 0;
+            }
+        }
+        function moveSnake() { // 뱀의 이동 함수
+            dx = nextDx;
+            dy = nextDy;
+            
+            const head = {x:snake[0].x + dx, y:snake[0].y + dy}; // 머리를 한칸씩 몸의 앞에 붙여서 이동하는 방식 -> 꼬리를 제거하는 함수도 필요
+
+            snake.unshift(head); // 내장 함수 unshift (배열의 맨 앞에 요소 추가, pop과 연계)
+
+            if(isRainbowMode) {
+                rainbowTimer--;
+                if(rainbowTimer <= 0) {
+                    isRainbowMode = false;
+                    updateCollectionUI(); // 무지개 모드가 끝나면 UI를 원래 상태로 복구
+                }
+            }
+
+            for(let i = foodList.length - 1; i >= 0; i--) {
+                foodList[i].timer--;
+                if(foodList[i].timer <= 0) {
+                    foodList.splice(i, 1); // 시간이 다 된 먹이 삭제
+                    addNewFood();        // 새로운 위치에 새 먹이 생성
+                }
+            }
+
+            let ateFood = false;
+            for(let i = 0; i < foodList.length; i++) {
+                if(head.x === foodList[i].x && head.y === foodList[i].y) { // 먹이를 먹으면 몸이 늘어남
+                    
+                    collectedColors.add(foodList[i].color);
+                    
+                    if(collectedColors.size === 7 && !isRainbowMode) {
+                        isRainbowMode = true;
+                        rainbowTimer = 50; // 무지개 버프 지속 턴 수 (약 15초간 유지)
+                        collectedColors.clear(); // 컬렉션 초기화 (다시 모을 수 있게)
+                    }
+
+                    if(isRainbowMode) {
+                        collectionStatusText.textContent = "✨ 무지개 모드 발동 중! ✨";
+                    } else {
+                        collectionStatusText.textContent = collectedColors.size + " / 7";
+                    }
+
+                    updateCollectionUI(); // 먹이를 먹을 때마다 수집 UI 즉시 갱신
+
+                    let earnedPoints = foodList[i].points;
+                    if(isRainbowMode) {
+                        earnedPoints *= 5;
+                    }
+
+                    score += earnedPoints; // 먹이 먹으면 점수 증가
+                    scoreText.textContent = score;
+                    
+                    foodList.splice(i, 1); // 먹은 먹이는 배열에서 제거
+                    addNewFood(); // 새로운 먹이 하나 추가 생성
+                    
+                    ateFood = true;
+                    break;
+                }
+            }
+
+            if(!ateFood) {
+                snake.pop(); // unshift와 연계, 먹이를 먹지 않아 pop이 발생하면 꼬리가 늘어나지 않음
+            } 
+        }
+
+        function addNewFood() {
+            const randomFood = rainbowFoods[Math.floor(Math.random() * rainbowFoods.length)];
+            foodList.push({
+                x: Math.floor(Math.random() * tileCount),
+                y: Math.floor(Math.random() * tileCount),
+                color: randomFood.color,
+                points: randomFood.points,
+                timer: 30 // 먹이가 유지되는 턴 수 설정 (게임 루프가 300ms마다 돌므로 약 9초 동안 유지됨)
+            });
+        }
+
+        function createObstacles() {
+            for(let i = 0; i < obstacleCount; i++) {
+                let obsX, obsY;
+                // 시작 위치(10, 10)와 겹치지 않게 생성
+                do {
+                    obsX = Math.floor(Math.random() * tileCount);
+                    obsY = Math.floor(Math.random() * tileCount);
+                } while (obsX === 10 && obsY === 10);
+
+                obstacles.push({x: obsX, y: obsY});
+            }
+        }
+
+        function checkCollision() { // 뱀의 머리와 벽이 충돌시 관여 함수
+            const head = snake[0];
+
+            if(head.x < 0 ||
+            head.x >= tileCount ||
+            head.y < 0 ||
+            head.y >= tileCount) {
+                endGame(); // 뱀의 머리가 상하좌우 벽에 충돌시 게임 종료
+            }
+
+            for(let i=1; i<snake.length; i++){ // 몸통의 모든 배열이 머리와 충돌했나 확인
+                if(head.x === snake[i].x && head.y === snake[i].y) {
+                    endGame(); // 뱀의 머리가 뱀의 몸통과 충돌시 게임 종료
+                }
+            }
+
+            for(let i = 0; i < obstacles.length; i++) {
+                if(head.x === obstacles[i].x && head.y === obstacles[i].y) {
+                    endGame(); // 뱀의 머리가 가시 장애물에 충돌시 게임 종료
+                }
+            }
+        }
+
+        function endGame() {
+            gameOver = true;
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)"; // rgb 값을 통해 회색 호출
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.font = "32px Arial";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.fillText("게임 오버!", canvas.width/2, canvas.height/2-20);
+            ctx.fillText("점수 : "+score, canvas.width/2, canvas.height/2+30);
+        }
+
+        function gameLoop() { // 게임 루프 함수
+            if (gameOver) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            moveSnake(); // 뱀 이동 함수
+            drawSnake(); // 뱀 몸체 그리기 함수
+            drawFood(); // 뱀 먹이 그리기 함수
+            drawObstacles(); // 가시 장애물 그리기 함수 호출
+            checkCollision(); // 충돌 체크 함수 정상 호출
+        }
+        
+        createObstacles();
+
+        for(let i = 0; i < maxFoodCount; i++) {
+            addNewFood();
+        }
+
+        setInterval(gameLoop, 300); // 게임 루프 발생 속도
+    </script>
+
+</body>
+
+</html>
