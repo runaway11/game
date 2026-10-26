@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>장애물 피하기 게임</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial;
+        }
+
+        canvas {
+            border: 2px solid black;
+            background: #f9f9f9;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>장애물 피하기 게임</h1>
+    <p>점수: <span id="score">0</span> | 체력: <span id="hp">100</span></p>
+    <p>조작: 방향키 ↑ ↓ ← →</p>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const scoreText = document.getElementById("score"); // 점수 값 가져오기
+    const hpText = document.getElementById("hp"); // 체력 값 가져오기
+
+    let score = 0;
+    let hp = 100;
+    let gameOver = false;
+
+    const player = {
+        x: 280, // 사각형은 중심을 지정하던 원과는 달리, 왼쪽 위 꼭짓점 좌표값을 구했음 -> 캔버스 가로폭을 절반 나눈 값(600/2)에서, 사각형 크기를 절반 나눈 값(40/2)을 빼줘야 지정해준 위치의 좌표값이 된다.
+        y: 330,
+        width: 40,
+        height: 40,
+        speed: 6
+    }
+
+    function drawPlayer() {
+        ctx.fillStyle = "royalblue";
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+    }
+
+    const keys = {}; // 키 입력시 객체를 저장하는 함수
+
+    document.addEventListener("keydown", function (event){
+        keys[event.key] = true; // 키를 누르고 있으면 true
+    });
+    document.addEventListener("keyup", function (event){
+        keys[event.key] = false; // 키를 누르지 않으면 false
+    });
+
+    function movePlayer(){
+        if(keys["ArrowLeft"]){
+            player.x -= player.speed;
+        }
+        if(keys["ArrowRight"]){
+            player.x += player.speed;
+        }
+        if(keys["ArrowUp"]){
+            player.y -= player.speed;
+        }
+        if(keys["ArrowDown"]){
+            player.y += player.speed;
+        }
+
+        if(player.x < 0) player.x = 0; // 플레이어가 왼쪽 캔버스를 넘어가면 못 넘어가게 만듦 (0 = canvas.width의 값)
+        if(player.x + player.width > canvas.width) player.x = canvas.width - player.width; // 플레이어가 오른쪽 캔버스를 넘어가면 못 넘어가게 만듦 (player.width 값을 빼는 이유는 캔버스 경계와 화면 간격)
+        if(player.y < 0) player.y = 0; // 플레이어가 위쪽 캔버스를 넘어가면 못 넘어가게 만듦
+        if(player.y + player.height > canvas.height) player.y = canvas.height - player.height; // 플레이어가 아래쪽 캔버스를 넘어가면 못 넘어가게 만듦
+    }
+
+    const rocks = []; // 위에서 떨어지는 돌 객체 저장 함수
+
+    function createRock() {
+        const rock = {
+            x: Math.random() * (canvas.width-30), // 30을 빼는 이유는 돌의 위치가 캔버스 위쪽 바깥에 위치하기 때문 
+            y: -30,
+            width: 30,
+            height: 30,
+            speed: Math.random() * 3 + 2, // random 함수는 0~1이 범위 -> 3을 곱해서 0~3으로 변화 -> 2를 더해서 최종적으로 2~5 가 스피드 수치 랜덤값의 범위가 됨 (유동적으로 조절)
+            damage: 20
+        };
+        rocks.push(rock);
+    }
+
+    function drawRocks() {
+        ctx.fillStyle = "gray";
+
+        for (let rock of rocks){
+            ctx.beginPath();
+            ctx.arc(
+                rock.x + rock.width/2,
+                rock.y + rock.height/2,
+                rock.width/2,
+                0,
+                Math.PI *2
+            );
+            ctx.fill();
+        }
+    }
+
+    function moveRocks() {
+        for(let rock of rocks) {
+            rock.y += rock.speed;
+        }
+        for(let i=rocks.length-1; i>=0; i--){
+            if(rocks[i].y > canvas.height) {
+                rocks.splice(i, 1);
+                score++;
+                scoreText.textContent = score;
+            }
+        }
+    }
+
+    function checkCollision() {
+        for (let i = rocks.length - 1; i >= 0; i--){
+            const rock = rocks[i];
+
+            if (player.x < rock.x + rock.width &&
+                player.x + player.width > rock.x &&
+                player.y < rock.y + rock.height &&
+                player.y + player.height > rock.y) {
+                hp -= rock.damage;
+
+                if (hp < 0) {
+                    hp = 0;
+                }
+                hpText.textContent = hp;
+                rocks.splice(i, 1);
+                if (hp <= 0) {
+                    endGame();
+                }
+            }
+        }
+    }
+
+    // [추가] 하트 아이템 관련 함수들
+    const hearts = []; 
+
+    function createHeart() {
+        const heart = {
+            x: Math.random() * (canvas.width - 25),
+            y: -25,
+            width: 25,
+            height: 25,
+            speed: Math.random() * 2 + 2, 
+            heal: 20 
+        };
+        hearts.push(heart);
+    }
+
+    function drawHearts() {
+        ctx.font = "24px Arial"; 
+        ctx.textAlign = "center"; 
+        ctx.textBaseline = "middle";
+
+        for (let heart of hearts) {
+            ctx.fillText(
+                "❤️", 
+                heart.x + heart.width / 2, 
+                heart.y + heart.height / 2
+            );
+        }
+    }
+
+    function moveHearts() {
+        for (let heart of hearts) {
+            heart.y += heart.speed;
+        }
+        for (let i = hearts.length - 1; i >= 0; i--) {
+            if (hearts[i].y > canvas.height) {
+                hearts.splice(i, 1);
+            }
+        }
+    }
+
+    function checkHeartCollision() {
+        for (let i = hearts.length - 1; i >= 0; i--) {
+            const heart = hearts[i];
+
+            if (player.x < heart.x + heart.width &&
+                player.x + player.width > heart.x &&
+                player.y < heart.y + heart.height &&
+                player.y + player.height > heart.y) {
+                
+                hp = Math.min(100, hp + heart.heal);
+                hpText.textContent = hp;
+                hearts.splice(i, 1);
+            }
+        }
+    }
+
+    // [추가] 즉사 운석 관련 함수들
+    const meteors = [];
+
+    function createMeteor() {
+        const meteor = {
+            x: Math.random() * (canvas.width - 35),
+            y: -35,
+            width: 35,
+            height: 35,
+            speed: Math.random() * 2 + 3, 
+            damage: 100 
+        };
+        meteors.push(meteor);
+    }
+
+    function drawMeteors() {
+        ctx.font = "28px Arial"; // 운석 이모지 크기 설정
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        for (let meteor of meteors) {
+            ctx.fillText(
+                "☄️", 
+                meteor.x + meteor.width / 2, 
+                meteor.y + meteor.height / 2
+            );
+        }
+    }
+
+    function moveMeteors() {
+        for (let meteor of meteors) {
+            meteor.y += meteor.speed;
+        }
+        for (let i = meteors.length - 1; i >= 0; i--) {
+            if (meteors[i].y > canvas.height) {
+                meteors.splice(i, 1);
+            }
+        }
+    }
+
+    function checkMeteorCollision() {
+        for (let i = meteors.length - 1; i >= 0; i--) {
+            const meteor = meteors[i];
+
+            if (player.x < meteor.x + meteor.width &&
+                player.x + player.width > meteor.x &&
+                player.y < meteor.y + meteor.height &&
+                player.y + player.height > meteor.y) {
+                
+                hp -= meteor.damage; 
+                if (hp < 0) hp = 0;
+                hpText.textContent = hp;
+                meteors.splice(i, 1);
+
+                if (hp <= 0) {
+                    endGame(); 
+                }
+            }
+        }
+    }
+
+    function drawHpBar() { // 캔버스 왼쪽 부근에 체력바 그리는 함수
+        ctx.fillStyle = "lightgray"; // 체력바 윤곽선은 회색으로
+        ctx.fillRect(20, 20, 200, 20);
+        ctx.fillStyle = "limegreen"; // 현재 체력값은 녹색으로
+        ctx.fillRect(20, 20, hp*2, 20);
+        ctx.strokeStyle = "black"; // 감소한 체력값은 검은색으로
+        ctx.strokeRect(20, 20, 200, 20);
+    }
+
+    function endGame() {
+        gameOver = true;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)" // 검은색 화면 rgb값으로 호출, 0.7은 투명도
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.font = "32px Arial";
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+
+        ctx.fillText("게임 오버!", canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText("최종 점수: " + score, canvas.width / 2, canvas.height / 2 + 30);
+    }
+
+    function gameLoop() {
+        if(gameOver) return; // 게임 오버가 true 라면 게임 종료
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        movePlayer();
+        drawPlayer();
+        
+        checkCollision();
+        moveRocks();
+        drawRocks();
+
+        checkHeartCollision();
+        moveHearts();
+        drawHearts();
+
+        checkMeteorCollision();
+        moveMeteors();
+        drawMeteors();
+
+        drawHpBar();
+        
+        requestAnimationFrame(gameLoop); // 게임을 계속 돌리기 위해 자신을 호출
+    }
+    
+    gameLoop();
+    setInterval(createRock, 700); // 주기적으로 돌 장애물 생성
+    setInterval(createHeart, 5000); // 5초마다 하트 아이템 생성 주기 설정
+    setInterval(createMeteor, 9000); // 9초마다 즉사 운석 생성 주기 설정
+</script>
+</body>
+
+</html>
