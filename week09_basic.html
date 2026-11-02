@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>슈팅게임</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial;
+        }
+
+        canvas {
+            border: 2px solid black;
+            background: #111;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Space Shooter</h1>
+    <p>점수: <span id="score">0</span> | 생명: <span id="life">3</span></p>
+    <!-- [NEW ITEM] 안내 문구 속 파워업 지속 시간을 3초로 수정 -->
+    <p>조작: ← / → 이동, Space 발사 | <span style="color: gold;">[P] 3발(3초)</span> / <span style="color: hotpink; font-weight: bold;">[H] 생명+1</span></p>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <script>
+        const canvas = document.getElementById("gameCanvas"); // 늘 하는 가져오기 함수들
+        const ctx = canvas.getContext("2d");
+
+        const scoreText = document.getElementById("score");
+        const liftText = document.getElementById("life");
+
+        let score = 0; // 늘 하는 호출 함수들
+        let life = 3;
+        let gameOver = false;
+
+        // ==========================================
+        // 🎁 [NEW ITEM] 아이템 관련 변수 및 상태 관리
+        // ==========================================
+        const items = []; // 떨어지는 아이템 객체들을 저장할 배열
+        let powerUpTimer = null; // 멀티샷(3발) 지속시간 타이머를 기록하는 변수
+        let isPowerUpActive = false; // 현재 파워업 아이템 효과가 켜져있는지 여부 (true/false)
+
+
+        const player = {
+            x: 280, // 플레이어는 캔버스 절반의 왼쪽 위 좌표에서 시작
+            y: 340,
+            width: 40,
+            height: 40,
+            speed: 6
+        }
+
+        function drawPlayer() {
+            ctx.fillStyle = "deepskyblue"; // 플레이어 몸통 그리기
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            ctx.fillStyle = "white" // 플레이어 총구 그리기
+            ctx.fillRect(player.x + 15, player.y - 10, 10, 10); // 총구는 플레이어 윗부분 중앙에 위치
+        }
+
+        // drawPlayer();
+
+        const keys = {}; // 입력 키 저장 함수
+
+        document.addEventListener("keydown", function (event){ // 입력 키 관련 함수, 스페이스바를 눌렀을 때
+            keys[event.code] = true; // 스페이스바는 화살표키와 달리 event.keys 코드가 적용되지 않아서, event.code 를 사용한다
+            if(event.code === "Space") { // 스페이스바를 누르면 총알 발사
+                shootBullet();
+            }
+        });
+
+        document.addEventListener("keyup", function (event) {
+            keys[event.code] = false;
+        });
+
+        function movePlayer() {
+            if(keys["ArrowLeft"]) { // 왼쪽 화살표키로 왼쪽 이동
+                player.x -= player.speed;
+            }
+            if (keys["ArrowRight"]) { // 오른쪽 화살표키로 오른쪽 이동
+                player.x += player.speed;
+            }
+            if (player.x < 0) { // 플레이어가 왼쪽 벽으로 나가지 않게 함
+                player.x = 0;
+            }
+            if (player.x + player.width > canvas.width) { // 플레이어가 오른쪽 벽으로 나가지 않게 함
+                player.x = canvas.width - player.width;
+            }
+        }
+
+        const bullets = []; // 총알 저장 함수
+
+        function shootBullet() {
+            if (isPowerUpActive) {
+                // 파워업 상태일 때: 총 3발의 총알을 부채꼴(직선 1발 + 좌우 대각선 2발)로 발사합니다.
+                bullets.push({ x: player.x + player.width/2 - 3, y: player.y, width: 6, height: 12, speed: 7, vx: 0 });  // 중앙 직선
+                bullets.push({ x: player.x + player.width/2 - 3, y: player.y, width: 6, height: 12, speed: 7, vx: -2 }); // 왼쪽 대각선
+                bullets.push({ x: player.x + player.width/2 - 3, y: player.y, width: 6, height: 12, speed: 7, vx: 2 });  // 오른쪽 대각선
+            } else {
+                // 일반 상태일 때: 기존과 동일하게 직선 총알 1발 발사
+                bullets.push({
+                    x: player.x + player.width/2 - 3,
+                    y: player.y,
+                    width: 6,
+                    height: 12,
+                    speed: 7,
+                    vx: 0
+                });
+            }
+        }
+
+        function drawBullets() {
+            ctx.fillStyle = "yellow";
+
+            for(let bullet of bullets){ // bullets 에 저장된 총알을 1개씩 가져온다
+                ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+            }
+        }
+
+        function moveBullets() {
+            for(let bullet of bullets){
+                bullet.y -= bullet.speed; // 총알은 총알 스피드만큼 위로 발사된다
+                bullet.x += bullet.vx;   // 대각선 총알 이동 처리를 위해 x좌표 이동값 추가
+            }
+
+            for(let i = bullets.length-1; i>=0; i--){ // length에 총알 저장되어 있음, 배열 항목의 꼬임을 방지하기 위해 뒤에서 앞 순서로 총알을 삭제
+                if(bullets[i].y + bullets[i].height < 0) {
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+
+        const enemies = [];
+
+        function createEnemy() {
+            enemies.push({
+                x: Math.random() * (canvas.width - 40),
+                y: -40,
+                width: 40,
+                height: 40,
+                speed: Math.random() * 2 + 2 // 2~4 사이로 랜덤 스피드
+            });
+        }
+
+        function drawEnemies() {
+            ctx.fillStyle = "crimson";
+
+            for(let enemy of enemies) {
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            }
+        }
+
+        function moveEnemies() {
+            for(let enemy of enemies) {
+                enemy.y += enemy.speed; // 적은 위에서 아래로 내려옴
+            }
+            for(let i = enemies.length-1; i>=0; i--) { // length에 저장된 적들이 아래 경계를 넘어가면 순차적 삭제(총알 삭제와 동일) / length - 1 을 하는 이유는 배열이 0부터 시작하기 때문
+                if(enemies[i].y > canvas.height) {
+                    enemies.splice(i, 1);
+
+                    life--; // 처치하지 못한 적이 밖으로 나가면 목숨 감소
+                    liftText.textContent = life;
+
+                    if (life <= 0) {
+                        endGame();
+                    }
+                }
+            }
+        }
+
+        function checkBulletEnemyCollision() { // 이중반복문을 사용해, 총알 1개와 적 1개가 충돌했는지 일일이 검사
+            for(let i=enemies.length-1; i>=0; i--){
+                const enemy = enemies[i];
+                for(let j=bullets.length-1; j>=0; j--){
+                    const bullet = bullets[j];
+
+                    if(bullet.x < enemy.x + enemy.width && // 적의 오른쪽에 총알 충돌
+                       bullet.x + bullet.width > enemy.x && // 적의 왼쪽에 총알 충돌
+                       bullet.y < enemy.y + enemy.height && // 적의 아래쪽에 총알 충돌 (적이 위에서 아래로 내려오므로 가장 많이 일어남)
+                       bullet.y + bullet.height > enemy.y // 적의 위쪽에 총알 충돌
+                    ){
+                        // 적이 처치될 때 30% 확률로 아이템 생성
+                        if (Math.random() < 0.3) {
+                            createItem(enemy.x + enemy.width / 2 - 10, enemy.y + enemy.height / 2 - 10);
+                        }
+
+                        enemies.splice(i, 1); // 적과 총알이 충돌하면 서로 사라짐
+                        bullets.splice(j, 1);
+                        score++;
+                        scoreText.textContent = score;
+                        break; // 충돌 발생시 해당 함수는 즉시 종료하고 넘어감
+                    }
+                }
+            }
+        }
+
+        function checkPlayerEnemyCollision() {
+            for(let i = enemies.length-1; i>=0; i--){
+                const enemy = enemies[i];
+                if(player.x < enemy.x + enemy.width &&
+                   player.x + player.width > enemy.x &&
+                   player.y < enemy.y + enemy.height &&
+                   player.y + player.height > enemy.y) {
+                    enemies.splice(i, 1);
+
+                    life--;
+                    liftText.textContent = life;
+                    if(life <= 0) {
+                    endGame();
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 🎁 [NEW ITEM] 아이템 생성 및 관리 함수들
+        // ==========================================
+
+        // 1. 적이 파괴된 위치에 아이템을 만드는 함수 (50% 확률로 파워업 'P' 또는 생명회복 'H' 결정)
+        function createItem(x, y) {
+            let isLifeItem = Math.random() < 0.5; // 50% 확률로 생명 아이템 여부 결정
+
+            items.push({
+                x: x,
+                y: y,
+                width: 20,
+                height: 20,
+                speed: 2, // 아이템이 떨어지는 속도
+                type: isLifeItem ? "life" : "powerup",   // 아이템 종류 ("life" 또는 "powerup")
+                text: isLifeItem ? "H" : "P",             // 화면에 표시될 글자 ("H" 또는 "P")
+                color: isLifeItem ? "hotpink" : "gold"    // 아이템 박스 색상 (생명은 핫핑크, 파워업은 금색)
+            });
+        }
+
+        // 2. 생성된 아이템들을 각 아이템의 설정된 색상과 글자로 화면에 그리는 함수
+        function drawItems() {
+            for (let item of items) {
+                // 아이템 상자 배경 색상 채우기
+                ctx.fillStyle = item.color;
+                ctx.fillRect(item.x, item.y, item.width, item.height);
+
+                // 아이템 중앙에 글자('P' 또는 'H') 그리기
+                ctx.fillStyle = "black";
+                ctx.font = "bold 14px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(item.text, item.x + item.width / 2, item.y + item.height / 2 + 5);
+            }
+        }
+
+        // 3. 아이템을 아래로 떨어뜨리고 화면 밖으로 나가면 삭제하는 함수
+        function moveItems() {
+            for (let item of items) {
+                item.y += item.speed;
+            }
+
+            for (let i = items.length - 1; i >= 0; i--) {
+                if (items[i].y > canvas.height) {
+                    items.splice(i, 1);
+                }
+            }
+        }
+
+        // 4. 플레이어가 아이템을 먹었을 때의 충돌 검사 및 효과 부여 함수
+        function checkPlayerItemCollision() {
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+
+                if (player.x < item.x + item.width &&
+                    player.x + player.width > item.x &&
+                    player.y < item.y + item.height &&
+                    player.y + player.height > item.y) {
+
+                    // 먹은 아이템 제거
+                    items.splice(i, 1); 
+
+                    // 아이템 타입에 따른 분기 처리
+                    if (item.type === "powerup") {
+                        activatePowerUp(); // 3발 파워업 발동
+                    } else if (item.type === "life") {
+                        life++; // 생명 1증가
+                        liftText.textContent = life; // 화면에 반영
+                    }
+                }
+            }
+        }
+
+        // 5. 파워업(3발 발사) 지속시간 처리 함수 (🎁 5초에서 3초로 단축)
+        function activatePowerUp() {
+            isPowerUpActive = true;
+
+            if (powerUpTimer) {
+                clearTimeout(powerUpTimer);
+            }
+
+            powerUpTimer = setTimeout(() => {
+                isPowerUpActive = false;
+            }, 3000); // 3초(3000밀리초) 동안 유지 후 일반 상태로 복귀
+        }
+
+
+        function endGame() {
+            gameOver = true;
+
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.font = "32px Arial";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+
+            ctx.fillText("게임 오버!", canvas.width / 2, canvas.height / 2 - 20);
+            ctx.fillText("최종 점수 : " + score, canvas.width / 2, canvas.height / 2 + 30);
+        }
+
+        function gameLoop() {
+            if(gameOver) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            movePlayer();
+            moveBullets();
+            moveEnemies();
+            moveItems(); // 아이템 이동 실행
+
+            checkBulletEnemyCollision();
+            checkPlayerEnemyCollision();
+            checkPlayerItemCollision(); // 플레이어-아이템 충돌 체크 실행
+
+            drawPlayer();
+            drawBullets();
+            drawEnemies();
+            drawItems(); // 아이템 그리기 실행
+            requestAnimationFrame(gameLoop);
+        }
+        setInterval(createEnemy, 900);
+        gameLoop();
+    </script>
+</body>
+
+</html>
