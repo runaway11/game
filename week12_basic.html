@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <title>RPG 이동 - 보석 찾기 퀘스트</title>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+
+        canvas {
+            border: 2px solid black;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>RPG 보석 찾기</h1>
+    <p>방향키: 이동 / NPC 근처에서 Space: 대화 / R: 다시 시작</p>
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const tileSize = 40;
+        let gameClear = false; /* 추가 순서 9번 */
+        let lives = 3;         /* [목숨 추가] 플레이어 목숨 (3개) */
+        let gameOver = false;  /* [목숨 추가] 게임 오버 여부 */
+
+        // 0: 길, 1: 벽, 2: 물
+        const map = [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1],
+            [1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 2, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
+
+        /* 추가 순서 1번 */
+        function drawMap() {
+            for (let row = 0; row < map.length; row++){ // length는 가로줄이 몇개 있나 = 10줄
+                for (let col = 0; col < map[row].length; col++){
+                    const tile = map[row][col];
+                    if(tile === 0) ctx.fillStyle = "#7ac943";
+                    if(tile === 1) ctx.fillStyle = "#5a3a1a";
+                    if(tile === 2) ctx.fillStyle = "#3498db";
+                    ctx.fillRect(col * tileSize, row * tileSize, tileSize, tileSize); // 배열을 그리기 위해서는 시작점의 X,Y좌표, 너비, 높이가 필요하다. (좌표는 0,1에서 각각 tileSize = 40씩 증가하고, 너비와 높이도 tileSize와 동일하다)
+                    ctx.strokeStyle = "#777";
+                    ctx.strokeRect(col * tileSize, row * tileSize, tileSize, tileSize); // 회색 테두리 선 그리기
+                }
+            }
+        }
+        // drawMap();
+
+        /* 추가 순서 2번 */
+        const npc = { x: 480, y: 280, width: 32, height: 32};
+
+        function drawNPC() {
+            ctx.fillStyle = "purple";
+            ctx.fillRect(npc.x, npc.y, npc.width, npc.height); // 보라색 npc 몸 그리기
+            ctx.fillStyle = "white";
+            ctx.fillRect(npc.x + 7, npc.y + 8, 5, 5); // npc 눈 그리기 (feat.마리오 눈)
+            ctx.fillRect(npc.x + 20, npc.y + 8, 5, 5);
+
+            /* 추가 순서 9번 */
+            if(isNearNPC() && !gameClear && !gameOver) { /* [목숨 추가] gameOver일 때 말풍선 숨김 */
+                ctx.fillStyle = "black";
+                ctx.font = "14px Arial";
+                ctx.fillText("Space", npc.x - 5, npc.y - 8);
+            }
+        }
+        // drawNPC();
+
+        /* 추가 순서 3번 */
+        const player = { x: 80, y: 80, width: 28, height: 28, speed: 4 };
+
+        function drawPlayer() {
+            ctx.fillStyle = "red";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            ctx.fillStyle = "white";
+            ctx.fillRect(player.x + 6, player.y + 8, 5, 5);
+            ctx.fillRect(player.x + 17, player.y + 8, 5, 5);
+        }
+        // drawPlayer();
+
+        /* 추가 순서 4번 */
+        const keys = {};
+
+        document.addEventListener("keydown", function (event){
+            keys[event.key] = true;
+
+            if(event.key.startsWith("Arrow") || event.code === "Space") {
+                event.preventDefault(); // 웹브라우저가 스크롤되거나 버튼이 눌리는 걸 방지
+            }
+            if(event.repeat) return;
+
+            if(event.code === "Space") talkToNPC(); /* 추가 순서 12번 */
+
+            if(event.key === "r" || event.key === "R") location.reload();
+        });
+        document.addEventListener("keyup", function (event){
+            keys[event.key] = false;
+        });
+
+        /* 추가 순서 5번 */
+        function movePlayer() {
+            if (showDialog || gameClear || gameOver) return; /* [목숨 추가] gameOver 시 이동 정지 */
+
+            let nextX = player.x;
+            let nextY = player.y;
+
+            if(keys["ArrowLeft"]) nextX -= player.speed;
+            if(keys["ArrowRight"]) nextX += player.speed;
+            if(keys["ArrowUp"]) nextY -= player.speed;
+            if(keys["ArrowDown"]) nextY += player.speed;
+
+            if(!isWall(nextX, player.y)) player.x = nextX; // nextX, nextY = 다음에 이동할 X, Y좌표
+            if(!isWall(player.x, nextY)) player.y = nextY; // 벽이 아닐 때만 다음에 이동할 좌표로 변경
+        }
+
+        /* 추가 순서 7번 */
+        function isWall(x, y) { // 플레이어의 상하좌우 타일이 벽인지 계산으로 확인함
+            const left = Math.floor(x / tileSize); // floor = 계산 후 소수점을 버리는 함수
+            const right = Math.floor((x + player.width - 1) / tileSize);
+            const top = Math.floor(y / tileSize);
+            const bottom = Math.floor((y + player.height - 1) / tileSize);
+
+            if (left < 0 || right >= map[0].length || !map[top] || !map[bottom])
+            return true; // 조건을 하나라도 충족하면 return
+
+            return map[top][left] === 1 || // 플레이어의 4방향 대각선 타일이 벽이면 return
+            map[top][right] === 1 ||
+            map[bottom][left] === 1 ||
+            map[bottom][right] === 1;
+        }
+
+        /* 추가 순서 8번 */
+        function isNearNPC() { // 이름을 'is'??? 로 짓는 것은, 참이나 거짓 여부를 따지는 함수이기로 약속함
+            const dx = player.x + player.width / 2 - (npc.x + npc.width / 2);
+            const dy = player.y + player.height / 2 - (npc.y + npc.height / 2);
+            return Math.sqrt(dx * dx + dy * dy) < 70; // 직선 사이의 거리를 구해서 70보다 안팎이면 근처인 것으로 인식
+        }
+
+        /* 추가 순서 10번 */
+        const gems = [{ x: 140, y: 300, taken: false },
+            { x: 340, y: 180, taken: false },
+            { x: 580, y: 60, taken: false }
+        ];
+
+        /* [물약 추가] 오른쪽 하단 물 타일(row 8, col 13) 중심 좌표에 생명 물약 데이터 생성 */
+        const potion = { x: 540, y: 340, taken: false };
+
+        let questStarted = false;
+        let gemCount = 0;
+        let showDialog = false;
+        let message = "";
+
+        /* [추가] 순찰하는 적 데이터 (일정 범위를 왕복 이동) */
+        const enemies = [
+            { x: 45, y: 245, width: 28, height: 28, speedX: 2.5, speedY: 0, minX: 45, maxX: 280, minY: 245, maxY: 245 }, // 가로 왕복 적
+            { x: 365, y: 50, width: 28, height: 28, speedX: 0, speedY: 2.5, minX: 365, maxX: 365, minY: 50, maxY: 240 }  // 세로 왕복 적
+        ];
+
+        /* [추가] 적 이동 함수 */
+        function moveEnemies() {
+            if (showDialog || gameClear || gameOver) return; /* [목숨 추가] gameOver 시 적 정지 */
+
+            for (let enemy of enemies) {
+                enemy.x += enemy.speedX;
+                enemy.y += enemy.speedY;
+
+                // X축 지정 범위를 벗어나면 방향 반전
+                if (enemy.x <= enemy.minX || enemy.x >= enemy.maxX) {
+                    enemy.speedX *= -1;
+                }
+                // Y축 지정 범위를 벗어나면 방향 반전
+                if (enemy.y <= enemy.minY || enemy.y >= enemy.maxY) {
+                    enemy.speedY *= -1;
+                }
+            }
+        }
+
+        /* [추가] 적 그리기 함수 */
+        function drawEnemies() {
+            for (let enemy of enemies) {
+                ctx.fillStyle = "#e67e22"; // 주황색 몸통
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                ctx.fillStyle = "black"; // 눈 그리기
+                ctx.fillRect(enemy.x + 6, enemy.y + 8, 5, 5);
+                ctx.fillRect(enemy.x + 17, enemy.y + 8, 5, 5);
+            }
+        }
+
+        /* [추가] 플레이어와 적 충돌 체크 함수 */
+        function checkEnemies() {
+            if (showDialog || gameClear || gameOver) return; /* [목숨 추가] gameOver 시 충돌 체크 중단 */
+
+            for (let enemy of enemies) {
+                // 사각형 충돌 판정 (AABB)
+                const isHit = player.x < enemy.x + enemy.width &&
+                              player.x + player.width > enemy.x &&
+                              player.y < enemy.y + enemy.height &&
+                              player.y + player.height > enemy.y;
+
+                if (isHit) {
+                    /* [목숨 추가] 목숨 차감 및 게임 오버 판정 */
+                    lives--;
+                    if (lives <= 0) {
+                        lives = 0;
+                        gameOver = true;
+                    } else {
+                        // 목숨이 남아있으면 시작 위치로 복귀
+                        player.x = 80;
+                        player.y = 80;
+                    }
+                    break; // 한 번에 여러 번 깎이지 않도록 반복 종료
+                }
+            }
+        }
+
+        /* 추가 순서 11번 */
+        function drawInfo() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 400, 640, 80); // 하단 여백의 좌표
+            ctx.fillStyle = "black";
+            ctx.font = "18px Arial";
+            ctx.fillText("보석: "+gemCount+"/3", 20, 435);
+
+            /* [목숨 추가] 하단 정보창 오른쪽에 남은 목숨(하트) 표시 */
+            ctx.fillStyle = "red";
+            ctx.fillText("목숨: " + "♥ ".repeat(lives), 470, 435);
+            ctx.fillStyle = "black";
+
+            let goal = questStarted ? "보석을 모으세요" : "NPC를 만나세요"; // ? = 참이면 전자를, 거짓이면 후자를 띄움
+            if(gemCount === 3) goal = "NPC에게 돌아가세요!";
+            if(gameOver) goal = "게임 오버! R키로 재시작"; /* [목숨 추가] */
+            ctx.fillText(goal, 170, 435);
+
+            ctx.font = "14px Arial";
+            ctx.fillText("방향키 이동 / Space 대화 / R 재시작", 20, 465);
+
+        }
+
+        /* 추가 순서 12번 */
+        function talkToNPC() {
+            if (gameClear || gameOver) return; /* [목숨 추가] gameOver 시 대화 불가 */
+            if (showDialog) {
+                showDialog = false;
+                return;
+            }
+            if (!isNearNPC()) return;
+            if (!questStarted) {
+                questStarted = true;
+                message = "보석 3개를 모아서 다시 와 줘!";
+            } else if (gemCount === 3) {
+                gameClear = true;
+                return;
+            } else {
+                message = "보석이 "+(3 - gemCount)+"개 남았어!";
+            }
+            showDialog = true;
+        }
+
+        /* 추가 순서 13번 */
+        function drawDialog() {
+            if (!showDialog) return;
+            ctx.fillStyle = "black";
+            ctx.fillRect(40, 330, 560, 100);
+
+            ctx.fillStyle = "white";
+            ctx.font = "18px Arial";
+            ctx.fillText("NPC: "+message, 60, 380);
+            ctx.fillText("Space: 닫기", 60, 410);
+        }
+
+        /* 추가 순서 14번 - [모양 변경] 보석을 다이아몬드 모양으로 그리기 */
+        function drawGems() {
+            if(!questStarted) return;
+            for(let gem of gems) {
+                if(gem.taken) continue;
+
+                // 1. 다이아몬드 외곽선 및 하늘색/금빛 채우기
+                ctx.beginPath();
+                ctx.moveTo(gem.x - 7, gem.y - 10);  // 왼쪽 위
+                ctx.lineTo(gem.x + 7, gem.y - 10);  // 오른쪽 위
+                ctx.lineTo(gem.x + 12, gem.y - 3);  // 오른쪽 중간
+                ctx.lineTo(gem.x, gem.y + 11);      // 아래쪽 뾰족한 끝
+                ctx.lineTo(gem.x - 12, gem.y - 3);  // 왼쪽 중간
+                ctx.closePath();
+
+                ctx.fillStyle = "#ffd700";          // 황금 다이아몬드 색상 (하늘색을 원하시면 "#00e5ff"로 변경)
+                ctx.fill();
+                ctx.strokeStyle = "#b8860b";        // 테두리 선
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // 2. 다이아몬드 내부 반짝임(면 분할) 선
+                ctx.beginPath();
+                ctx.moveTo(gem.x - 12, gem.y - 3);
+                ctx.lineTo(gem.x + 12, gem.y - 3);  // 가로선
+                ctx.moveTo(gem.x - 7, gem.y - 10);
+                ctx.lineTo(gem.x - 4, gem.y - 3);
+                ctx.lineTo(gem.x, gem.y + 11);      // 왼쪽 각진 면
+                ctx.moveTo(gem.x + 7, gem.y - 10);
+                ctx.lineTo(gem.x + 4, gem.y - 3);
+                ctx.lineTo(gem.x, gem.y + 11);      // 오른쪽 각진 면
+                ctx.strokeStyle = "#fff8dc";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        /* [물약 추가] - [모양 변경] 생명 물약을 하트 모양으로 그리기 */
+        function drawPotion() {
+            if (!questStarted || potion.taken) return; // 퀘스트 시작 전이거나 이미 먹었으면 그리지 않음
+
+            const x = potion.x;
+            const y = potion.y - 3; // 하트 중심 높이 보정
+
+            ctx.beginPath();
+            ctx.moveTo(x, y + 12); // 하트 아래쪽 뾰족한 끝
+            // 왼쪽 둥근 곡선
+            ctx.bezierCurveTo(x - 14, y + 2, x - 14, y - 10, x, y - 3);
+            // 오른쪽 둥근 곡선
+            ctx.bezierCurveTo(x + 14, y - 10, x + 14, y + 2, x, y + 12);
+            ctx.closePath();
+
+            ctx.fillStyle = "#ff2a55"; // 선명한 빨간색 하트
+            ctx.fill();
+            ctx.strokeStyle = "#990022"; // 진한 빨간 테두리
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // 하트 왼쪽 위 반짝임(하이라이트)
+            ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.beginPath();
+            ctx.arc(x - 5, y - 3, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        /* 추가 순서 15번 */
+        function checkGems() {
+            if(!questStarted || showDialog || gameClear || gameOver) return; /* [목숨 추가] */
+
+            for(let gem of gems) {
+                const dx = player.x + player.width / 2 - gem.x;
+                const dy = player.y + player.height / 2 - gem.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if(!gem.taken && distance < 25) {
+                    gem.taken = true;
+                    gemCount++;
+                }
+            }
+        }
+
+        /* [물약 추가] 생명 물약 획득 체크 함수 */
+        function checkPotion() {
+            if (!questStarted || potion.taken || showDialog || gameClear || gameOver) return;
+
+            const dx = player.x + player.width / 2 - potion.x;
+            const dy = player.y + player.height / 2 - potion.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < 25) {
+                potion.taken = true;
+                lives++; // 목숨 1 증가
+            }
+        }
+
+        function drawClear() {
+            if (!gameClear) return;
+
+            ctx.fillStyle = "white";
+            ctx.fillRect(70, 130, 500, 180);
+            ctx.strokeStyle = "black";
+            ctx.strokeRect(70, 130, 500, 180);
+
+            ctx.textAlign = "center";
+            ctx.fillStyle = "black";
+            ctx.font = "32px Arial";
+            ctx.fillText("게임 클리어!", 320, 200);
+            ctx.font = "20px Arial";
+            ctx.fillText("보석 3개 수집 성공", 320, 245);
+            ctx.fillText("R 키 : 다시 시작", 320, 280);
+            ctx.textAlign = "left";
+        }
+
+        /* [목숨 추가] 게임 오버 화면 그리기 함수 */
+        function drawGameOver() {
+            if (!gameOver) return;
+
+            ctx.fillStyle = "white";
+            ctx.fillRect(70, 130, 500, 180);
+            ctx.strokeStyle = "black";
+            ctx.strokeRect(70, 130, 500, 180);
+
+            ctx.textAlign = "center";
+            ctx.fillStyle = "red";
+            ctx.font = "32px Arial";
+            ctx.fillText("게임 오버!", 320, 200);
+            ctx.fillStyle = "black";
+            ctx.font = "20px Arial";
+            ctx.fillText("목숨을 모두 잃었습니다", 320, 245);
+            ctx.fillText("R 키 : 다시 시작", 320, 280);
+            ctx.textAlign = "left";
+        }
+
+        /* 추가 순서 6번 */
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            movePlayer();
+            moveEnemies();  /* [추가] 적 이동 실행 */
+            checkGems();
+            checkPotion();  /* [물약 추가] 물약 획득 확인 */
+            checkEnemies(); /* [추가] 적 충돌 확인 */
+            drawMap();
+            drawGems();
+            drawPotion();   /* [물약 추가] 물약 그리기 */
+            drawNPC();
+            drawEnemies();  /* [추가] 적 그리기 */
+            drawPlayer();
+            drawInfo();
+            drawDialog();
+            drawClear();
+            drawGameOver(); /* [목숨 추가] 게임 오버 화면 그리기 */
+            requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+    </script>
+</body>
+
+</html>
